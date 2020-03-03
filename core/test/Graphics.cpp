@@ -304,3 +304,68 @@ TEST(Graphics, CameraBasic) {
 
     Altseed::Core::Terminate();
 }
+
+TEST(Graphics, PostEffect) {
+    const char* ps = R"(
+Texture2D mainTex : register(t0);
+SamplerState mainSamp : register(s0);
+float4 time;
+
+struct PS_INPUT
+{
+    float4  Position : SV_POSITION;
+    float4  Color    : COLOR0;
+	float2  UV1 : UV0;
+	float2  UV2 : UV1;
+};
+float4 main(PS_INPUT input) : SV_TARGET 
+{ 
+	float4 c;
+	c = mainTex.Sample(mainSamp, (input.UV1 + time.xy) % 1.0f) * input.Color;
+    // c = float4((input.UV1 + time.xy) % 1.0f, 0.0f, 1.0f);
+	return c;
+}
+)";
+
+    const int width = 1280;
+    const int height = 720;
+
+    EXPECT_TRUE(Altseed::Core::Initialize(u"PostEffect", width, height, Altseed::Configuration::Create()));
+
+    auto material = Altseed::MakeAsdShared<Altseed::Material>();
+    {
+        auto shader = Altseed::ShaderCompiler::GetInstance()->Compile("PostEffectTestShader", ps, Altseed::ShaderStageType::Pixel);
+        material->SetShader(shader);
+    }
+
+    auto instance = Altseed::Graphics::GetInstance();
+
+    auto s1 = Altseed::RenderedSprite::Create();
+    {
+        auto t1 = Altseed::Texture2D::Load(u"TestData/IO/AltseedPink256.png");
+        EXPECT_TRUE(t1 != nullptr);
+        s1->SetTexture(t1);
+        auto trans = Altseed::Matrix44F();
+        trans.SetTranslation(200, 200, 0);
+        s1->SetTransform(trans);
+        s1->SetSrc(Altseed::RectF(0, 0, 256, 256));
+    }
+
+    auto renderer = Altseed::Renderer::GetInstance();
+    
+    for (int count = 0; count < 500 && Altseed::Core::GetInstance()->DoEvent(); count++) {
+        EXPECT_TRUE(instance->BeginFrame());
+
+        renderer->DrawSprite(s1);
+
+        renderer->Render(instance->GetCommandList());
+
+        material->SetTexture(u"mainTex", instance->GetCommandList()->GetScreenTexture());
+        material->SetVector4F(u"time", Altseed::Vector4F(count / 500.0f, 0.0f, 0.0f, 0.0f));
+        instance->GetCommandList()->RenderToRenderTarget(material);
+
+        EXPECT_TRUE(instance->EndFrame());
+    }
+
+    Altseed::Core::Terminate();
+}
